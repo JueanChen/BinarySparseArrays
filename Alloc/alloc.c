@@ -1,0 +1,256 @@
+#include "specific.h"
+
+void test(void)
+{}
+
+// Create an empty BSA
+bsa* bsa_init(void)
+{
+   static bsa arr;
+   bsa* b;
+
+   b = &arr;
+   arr.empty = true;
+   for (int i = 0; i < BSA_ROWS; i++) {
+      arr.rpt[i] = NULL;
+   }
+
+   return b;
+}
+
+// Set element at index indx with value d i.e. b[i] = d;
+// May require an allocation if it's the first element in that row
+bool bsa_set(bsa* b, int indx, int d)
+{
+   int row = get_row(indx);
+   int p = get_pos(indx, row);
+
+   b->empty = false;
+   if (b->rpt[row] == NULL) {
+      b->rpt[row] = (int*)calloc(1<<row, sizeof(int));
+      for (int i = 0; i < 1<<row; i++) {
+         b->rpt[row][i] = UNSET;
+      }
+   }    
+   b->rpt[row][p] = d;
+
+   return true;
+}
+
+// Return pointer to data at element b[i]
+// or NULL if element is unset, or part of a row that hasn't been allocated.
+int* bsa_get(bsa* b, int indx)
+{
+   int row = get_row(indx);
+   int pos = get_pos(indx, row);
+    
+   if (b->rpt[row] != NULL && b->rpt[row][pos] != UNSET) {
+      return &(b->rpt[row][pos]);
+   }
+
+   return NULL;
+}
+
+// Delete element at index indx - forces a shrink
+// if that was the only cell in the row occupied.
+bool bsa_delete(bsa* b, int indx)
+{
+   int row = get_row(indx);
+   int p = get_pos(indx, row);
+
+   if (b->rpt[row] == NULL || b->rpt[row][p] == UNSET) {
+      return false;
+   }    
+   else {    
+      b->rpt[row][p] = UNSET;
+      if (check_row(b, row)) {
+         free(b->rpt[row]);
+         b->rpt[row] = NULL;
+      }
+      check_bsa(b);
+   }
+
+   return true;
+}
+
+// Returns maximum index written to so far or
+// -1 if no cells have been written to yet
+int bsa_maxindex(bsa* b)
+{
+   int maxindex = -1, max = -1;
+   if (b != NULL && !b->empty) {
+      for (int i = 0; i < BSA_ROWS; i++) {
+         if (b->rpt[i] != NULL) {
+            for (int j = 0; j < 1<<i; j++) {
+               if (b->rpt[i][j] > max) {
+                  maxindex = (1 << i) - 1 + j;
+               }
+            }
+         }    
+      }
+      return maxindex;
+   }
+   return maxindex;
+}
+
+// Returns stringified version of structure
+// Each row has its elements printed between {}, up to the maximum index.
+// Rows after the maximum index are ignored.
+bool bsa_tostring(bsa* b, char* str)
+{
+   if (b == NULL) {
+      return false;
+   }
+   strcpy(str, "");
+   if (b->empty) {
+      return true;
+   }
+   int maxindex = bsa_maxindex(b);
+   int maxrow = get_row(maxindex);
+   
+   for (int i = 0; i <= maxrow; i++) {
+      row_to_string(b, i, str);
+   }
+
+   return true;
+}
+
+// Clears up all space used
+bool bsa_free(bsa* b)
+{
+   for (int i = 0; i < BSA_ROWS; i++) {
+      if (b->rpt[i] != NULL) {
+         free(b->rpt[i]);
+         b->rpt[i] = NULL;
+      }
+   }
+   b = NULL;    
+   return true;
+}
+
+// Allow a user-defined function to be applied to each (valid) value 
+// in the array. The user defined 'func' is passed a pointer to an int,
+// and maintains an accumulator of the result where required.
+void bsa_foreach(void (*func)(int* p, int* n), bsa* b, int* acc)
+{
+   for (int i = 0; i < BSA_ROWS; i++) {
+      if (b->rpt[i] != NULL) {
+         for (int j = 0; j < (1<<i); j++) {
+            if (b->rpt[i][j] != UNSET) {
+               (*func)(&(b->rpt[i][j]), acc);
+            }
+         }
+      }
+   }
+}
+
+// Get the row of the input index
+int get_row(int indx)
+{
+   if (indx > 2) {
+      int n = ilog2(indx+1);
+      return n;
+   }    
+   else if (indx == 0) { 
+      return 0;
+   }    
+   else { 
+      return 1;
+   }
+}
+
+// Calculate the ilog2 using bit manipulation
+int ilog2(int i)
+{
+   if (i != 0) {
+      return 1 + ilog2(i>>1);
+   }
+   return -1;
+}
+
+// Get the position of the input index in its row
+int get_pos(int indx, int row)
+{
+   return indx - (1 << row) + 1;
+}
+
+// Check whether the row is empty
+bool check_row(bsa* b, int row)
+{
+   if (b->rpt[row] == NULL) {
+      return true;
+   }
+   for (int i = 0; i < (1<<row); i++) {
+      if (b->rpt[row][i] != UNSET) {
+         return false;
+      }    
+   }
+
+   return true;
+}
+
+// Check whether the whole bsa is empty
+void check_bsa(bsa* b)
+{
+   int cnt = 0;
+
+   for (int i = 0; i < BSA_ROWS; i++) {
+      if (check_row(b, i)) {
+         cnt++;
+      }
+   }
+
+   if (cnt == BSA_ROWS) {
+      b->empty = true;
+   }
+}
+
+// Change a row to string and add it to str
+void row_to_string(bsa* b, int row, char* str)
+{
+   int cnt = 0;
+   char temp[20];
+
+   if (b->rpt[row] == NULL) {
+      strcat(str, "{}");
+   }    
+   else {
+      strcat(str, "{[");
+      for (int j = 0; j < (1<<row); j++) {
+         if (b->rpt[row][j] != UNSET) {
+            if (cnt != 0) { 
+               strcat(str, " [");
+            }
+            cnt++;
+            int_to_char((1<<row)-1+j, temp);
+            strcat(str, temp);
+            strcat(str, "]=");
+            int_to_char(b->rpt[row][j], temp);
+            strcat(str, temp);
+         }
+      }
+      strcat(str, "}");
+   }
+}
+
+// Change the variable n from int to char 
+void int_to_char(int n, char* s)
+{
+   int t, cnt = 0;
+   char s_rev[20];
+   if (n == 0) {
+      s[0] = '0';
+      s[1] = '\0';
+   }
+   else {    
+      while (n != 0) {
+         t = n % 10;
+     	 s_rev[cnt++] = t + '0';
+      	 n /= 10;
+      }
+      for (int i = 0; i < cnt; i++) {
+    	 s[i] = s_rev[cnt-i-1];
+      }
+      s[cnt] = '\0';
+   }    
+}
